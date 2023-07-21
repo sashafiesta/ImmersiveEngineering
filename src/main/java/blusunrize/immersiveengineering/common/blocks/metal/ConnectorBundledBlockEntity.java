@@ -8,6 +8,8 @@
 
 package blusunrize.immersiveengineering.common.blocks.metal;
 
+import blusunrize.immersiveengineering.api.IEEnums.IOSideConfig;
+import blusunrize.immersiveengineering.api.Lib;
 import blusunrize.immersiveengineering.api.utils.CapabilityReference;
 import blusunrize.immersiveengineering.api.utils.DirectionalBlockPos;
 import blusunrize.immersiveengineering.api.wires.ConnectionPoint;
@@ -17,23 +19,34 @@ import blusunrize.immersiveengineering.api.wires.redstone.CapabilityRedstoneNetw
 import blusunrize.immersiveengineering.api.wires.redstone.IRedstoneConnector;
 import blusunrize.immersiveengineering.api.wires.redstone.RedstoneNetworkHandler;
 import blusunrize.immersiveengineering.common.blocks.IEBlockInterfaces.IBlockBounds;
+import blusunrize.immersiveengineering.common.blocks.IEBlockInterfaces.IBlockOverlayText;
+import blusunrize.immersiveengineering.common.blocks.IEBlockInterfaces.IScrewdriverInteraction;
 import blusunrize.immersiveengineering.common.blocks.IEBlockInterfaces.IStateBasedDirectional;
 import blusunrize.immersiveengineering.common.blocks.PlacementLimitation;
 import blusunrize.immersiveengineering.common.blocks.generic.ConnectorBlock;
 import blusunrize.immersiveengineering.common.blocks.generic.ImmersiveConnectableBlockEntity;
 import blusunrize.immersiveengineering.common.blocks.ticking.IEServerTickableBE;
+import blusunrize.immersiveengineering.common.blocks.wooden.LogicUnitBlockEntity;
 import blusunrize.immersiveengineering.common.register.IEBlockEntities;
+import blusunrize.immersiveengineering.common.util.Utils;
 import com.google.common.collect.ImmutableList;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -48,8 +61,11 @@ import java.util.Objects;
 import static blusunrize.immersiveengineering.api.wires.WireType.REDSTONE_CATEGORY;
 
 public class ConnectorBundledBlockEntity extends ImmersiveConnectableBlockEntity implements IEServerTickableBE, IStateBasedDirectional,
-		IBlockBounds, IRedstoneConnector
+		IScrewdriverInteraction, IBlockBounds, IBlockOverlayText, IRedstoneConnector
 {
+	public IOSideConfig ioMode = IOSideConfig.NONE;
+	public boolean connectedToLogicUnit = false;
+	
 	public static final List<IBundledProvider> EXTRA_SOURCES = new ArrayList<>();
 
 	public ConnectorBundledBlockEntity(BlockPos pos, BlockState state)
@@ -100,6 +116,8 @@ public class ConnectorBundledBlockEntity extends ImmersiveConnectableBlockEntity
 	{
 		if(!level.isClientSide)
 		{
+			BlockEntity te = getLevelNonnull().getBlockEntity(getAttachedFace().position());
+			connectedToLogicUnit = (te instanceof LogicUnitBlockEntity);
 			RedstoneBundleConnection connection = attached.getNullable();
 			if(connection!=null)
 				connection.onChange(handler.getValuesExcluding(cp), getFacing().getOpposite());
@@ -161,12 +179,16 @@ public class ConnectorBundledBlockEntity extends ImmersiveConnectableBlockEntity
 	public void writeCustomNBT(CompoundTag nbt, boolean descPacket)
 	{
 		super.writeCustomNBT(nbt, descPacket);
+		nbt.putInt("ioMode", ioMode.ordinal());
+		nbt.putBoolean("connectedToLogicUnit", connectedToLogicUnit);
 	}
 
 	@Override
 	public void readCustomNBT(@Nonnull CompoundTag nbt, boolean descPacket)
 	{
 		super.readCustomNBT(nbt, descPacket);
+		ioMode = IOSideConfig.VALUES[nbt.getInt("ioMode")];
+		connectedToLogicUnit = nbt.getBoolean("connectedToLogicUnit");
 	}
 
 	@Override
@@ -196,6 +218,8 @@ public class ConnectorBundledBlockEntity extends ImmersiveConnectableBlockEntity
 		DirectionalBlockPos attachedTo = getAttachedFace();
 		if(!otherPos.equals(attachedTo.position())||attached.isPresent())
 			return;
+		BlockEntity te = getLevelNonnull().getBlockEntity(otherPos);
+		connectedToLogicUnit = (te instanceof LogicUnitBlockEntity);
 		byte[] overrideState = null;
 		for(IBundledProvider source : EXTRA_SOURCES)
 		{
@@ -227,5 +251,41 @@ public class ConnectorBundledBlockEntity extends ImmersiveConnectableBlockEntity
 	{
 		@Nullable
 		byte[] getEmittedState(Level w, BlockPos emittingBlock, Direction emittingSide);
+	}
+	
+	protected void updateAfterConfigure()
+	{
+		setChanged();
+		getHandler().updateValues();
+		this.markContainingBlockForUpdate(null);
+		level.blockEvent(getBlockPos(), this.getBlockState().getBlock(), 254, 0);
+	}
+	
+	@Override
+	public InteractionResult screwdriverUseSide(Direction side, Player player, InteractionHand hand, Vec3 hitVec)
+	{
+		if (!connectedToLogicUnit)
+			return InteractionResult.FAIL;
+		ioMode = IOSideConfig.next(ioMode);
+		updateAfterConfigure();
+		return InteractionResult.SUCCESS;
+	}
+	
+	@Override
+	public Component[] getOverlayText(Player player, HitResult mop, boolean hammer)
+	{
+		if(!Utils.isScrewdriver(player.getItemInHand(InteractionHand.MAIN_HAND)))
+			return null;
+		if (!connectedToLogicUnit)
+			return null;
+		return new Component[]{
+				Component.translatable(Lib.DESC_INFO+"logicUnitInteraction", I18n.get(Lib.DESC_INFO+"blockSide.io."+this.ioMode.getSerializedName()+".bundled"))
+		};
+	}
+	
+	@Override
+	public boolean useNixieFont(Player player, HitResult mop)
+	{
+		return false;
 	}
 }

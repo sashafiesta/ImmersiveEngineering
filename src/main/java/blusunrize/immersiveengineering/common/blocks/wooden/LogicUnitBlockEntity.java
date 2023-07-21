@@ -8,6 +8,7 @@
 
 package blusunrize.immersiveengineering.common.blocks.wooden;
 
+import blusunrize.immersiveengineering.api.IEEnums.IOSideConfig;
 import blusunrize.immersiveengineering.api.IEProperties;
 import blusunrize.immersiveengineering.api.tool.LogicCircuitHandler.ILogicCircuitHandler;
 import blusunrize.immersiveengineering.api.tool.LogicCircuitHandler.LogicCircuitRegister;
@@ -20,6 +21,7 @@ import blusunrize.immersiveengineering.common.blocks.IEBlockInterfaces.IBlockEnt
 import blusunrize.immersiveengineering.common.blocks.IEBlockInterfaces.IInteractionObjectIE;
 import blusunrize.immersiveengineering.common.blocks.IEBlockInterfaces.IStateBasedDirectional;
 import blusunrize.immersiveengineering.common.blocks.PlacementLimitation;
+import blusunrize.immersiveengineering.common.blocks.metal.ConnectorBundledBlockEntity;
 import blusunrize.immersiveengineering.common.items.LogicCircuitBoardItem;
 import blusunrize.immersiveengineering.common.register.IEBlockEntities;
 import blusunrize.immersiveengineering.common.register.IEMenuTypes;
@@ -37,6 +39,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.storage.loot.LootContext;
@@ -187,10 +190,15 @@ public class LogicUnitBlockEntity extends IEBaseBlockEntity implements IIEInvent
 						@Override
 						public void onChange(byte[] externalInputs, Direction side)
 						{
+							boolean isEnabled = true;
+							BlockEntity te = getLevelNonnull().getBlockEntity(getBlockPos().relative(f));
+							if (te instanceof ConnectorBundledBlockEntity connector)
+								if (connector.ioMode == IOSideConfig.OUTPUT)
+									isEnabled = false;
 							boolean[] sideInputs = inputs.getOrDefault(side, new boolean[SIZE_COLORS]);
 							boolean[] preInput = Arrays.copyOf(sideInputs, SIZE_COLORS);
 							for(int i = 0; i < SIZE_COLORS; i++)
-								sideInputs[i] = externalInputs[i] > 0;
+								sideInputs[i] = (externalInputs[i] > 0) && isEnabled;
 							// if the input changed, update and run circuits
 							if(!Arrays.equals(preInput, sideInputs))
 							{
@@ -203,9 +211,14 @@ public class LogicUnitBlockEntity extends IEBaseBlockEntity implements IIEInvent
 						@Override
 						public void updateInput(byte[] signals, Direction side)
 						{
+							boolean isEnabled = true;
+							BlockEntity te = getLevelNonnull().getBlockEntity(getBlockPos().relative(f));
+							if (te instanceof ConnectorBundledBlockEntity connector)
+								if (connector.ioMode == IOSideConfig.INPUT)
+									isEnabled = false;
 							for(DyeColor dye : DyeColor.values())
 								if(outputs[dye.getId()])
-									signals[dye.getId()] = (byte)15;
+									signals[dye.getId()] = isEnabled?(byte)15: (byte)0;
 						}
 					}
 			);

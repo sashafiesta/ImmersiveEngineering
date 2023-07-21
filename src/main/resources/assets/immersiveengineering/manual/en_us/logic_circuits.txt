@@ -14,4 +14,4 @@ Helpful shortcuts:
 For a logic unit to interface with the colored redstone systems, it needs to have a <link;redstone_wire;Redstone Interface Connector;bundled> attached to its side.
 Every time any of the attached connectors change their state, the logic unit cycles through its circuits and performs all 10 operations.
 If a circuit uses a register as an output, the resulting value is kept in the register and may be used by later circuit as an input.
-The same interface connector used to input can be used as an output as well.
+By default, the same interface connector used to input can be used as an output as well, but you can adjust this behaviour with Engineer's Screwdriver.
